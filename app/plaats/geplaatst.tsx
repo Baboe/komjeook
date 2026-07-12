@@ -1,5 +1,5 @@
 import { View, StyleSheet } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import Svg, { Polygon } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -14,9 +14,38 @@ import { colors, radius, spacing } from '../../constants/theme';
 
 export default function Geplaatst() {
   const router = useRouter();
+  const { reactie } = useLocalSearchParams<{ reactie?: string }>();
+  const isReactie = reactie === '1';
   const { profile } = useAuth();
   const draft = useDraft();
   const naam = profile?.voornaam ?? '';
+
+  if (isReactie) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <StatusBar style="dark" />
+        <View style={styles.wrap}>
+          <View style={styles.center}>
+            <Mark size={60} />
+            <Text variant="display" style={styles.title}>
+              Je reactie is verstuurd{naam ? `, ${naam}` : ''}!
+            </Text>
+            <Text variant="body" color={colors.warmGray} style={styles.sub}>
+              Je hoort het zodra er gekozen is.
+            </Text>
+          </View>
+          <Button
+            title="Terug naar de oproepen"
+            onPress={() => {
+              draftStore.reset();
+              router.dismissAll();
+              router.replace('/(tabs)');
+            }}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe}>

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, Pressable, Animated } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -12,6 +12,10 @@ import { colors, radius, spacing } from '../../constants/theme';
 
 export default function Microfoon() {
   const router = useRouter();
+  // Als 'reactieVoor' is meegegeven nemen we een reactie op een oproep op,
+  // anders een nieuwe eigen oproep.
+  const { reactieVoor } = useLocalSearchParams<{ reactieVoor?: string }>();
+  const isReactie = typeof reactieVoor === 'string' && reactieVoor.length > 0;
   const recRef = useRef<Audio.Recording | null>(null);
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
@@ -60,7 +64,11 @@ export default function Microfoon() {
       setRecording(false);
       if (uri && seconds >= 1) {
         draftStore.set({ uri, duration: seconds });
-        router.push('/plaats/bevestigen');
+        router.push(
+          isReactie
+            ? { pathname: '/plaats/bevestigen', params: { reactieVoor } }
+            : '/plaats/bevestigen',
+        );
       }
     } catch {}
   }
@@ -71,7 +79,7 @@ export default function Microfoon() {
 
       <View style={styles.topbar}>
         <View style={{ width: 64 }} />
-        <Text style={styles.title}>Nieuwe activiteit</Text>
+        <Text style={styles.title}>{isReactie ? 'Jouw reactie' : 'Nieuwe activiteit'}</Text>
         <Pressable onPress={() => router.back()} hitSlop={12} style={styles.cancel}>
           <Text variant="bodyMedium" color={colors.warmGray} style={{ fontSize: 14 }}>
             Annuleer
@@ -86,7 +94,7 @@ export default function Microfoon() {
           </Text>
         ) : (
           <Text variant="bodyMedium" style={{ fontSize: 15 }}>
-            Wat ga jij doen?
+            {isReactie ? 'Laat even van je horen' : 'Wat ga jij doen?'}
           </Text>
         )}
 
@@ -115,7 +123,9 @@ export default function Microfoon() {
 
       <View style={styles.tip}>
         <Text variant="meta" color={colors.textMid} style={styles.tipText}>
-          "Zaterdag naar de Noordermarkt, wie heeft er zin?"
+          {isReactie
+            ? '"Leuk! Ik ben Marc en ik ga graag mee."'
+            : '"Zaterdag naar de Noordermarkt, wie heeft er zin?"'}
         </Text>
       </View>
     </SafeAreaView>

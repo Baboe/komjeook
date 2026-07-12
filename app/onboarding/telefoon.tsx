@@ -1,6 +1,6 @@
 import { View, StyleSheet, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Svg, { Path, Rect } from 'react-native-svg';
 import { Screen } from '../../components/Screen';
 import { Text } from '../../components/Text';
@@ -10,9 +10,26 @@ import { StepHeader } from '../../components/StepHeader';
 import { onboardingStore, useOnboarding } from '../../lib/onboardingStore';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
+import { geocodeStad } from '../../lib/geo';
+import { registreerPush } from '../../lib/notifications';
 import { colors, radius, spacing } from '../../constants/theme';
 
-const DEV_SKIP = process.env.EXPO_PUBLIC_DEV_SKIP_AUTH === 'true';
+const DEV_SKIP = __DEV__ && process.env.EXPO_PUBLIC_DEV_SKIP_AUTH === 'true';
+
+// Supabase-foutmeldingen zijn Engels; vertaal naar warme, duidelijke taal.
+function nlFout(message: string): string {
+  const m = message.toLowerCase();
+  if (m.includes('rate limit') || m.includes('too many') || m.includes('security purposes'))
+    return 'Te veel pogingen. Wacht heel even en probeer het dan opnieuw.';
+  if (m.includes('expired')) return 'De code is verlopen. Vraag een nieuwe code aan.';
+  if (m.includes('invalid') && (m.includes('token') || m.includes('otp')))
+    return 'De code klopt niet. Controleer de cijfers en probeer het opnieuw.';
+  if (m.includes('phone') || m.includes('invalid'))
+    return 'Dit telefoonnummer lijkt niet te kloppen. Controleer het even.';
+  if (m.includes('network') || m.includes('fetch'))
+    return 'Geen verbinding. Controleer je internet en probeer het opnieuw.';
+  return 'Er ging iets mis. Probeer het opnieuw.';
+}
 
 function normalizeNL(input: string) {
   const digits = input.replace(/[^0-9+]/g, '');
@@ -40,10 +57,17 @@ export default function Telefoon() {
   const [stage, setStage] = useState<'invoer' | 'code'>('invoer');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [wachttijd, setWachttijd] = useState(0);
 
   const e164 = normalizeNL(data.telefoonnummer);
   const validNumber = /^\+\d{10,15}$/.test(e164);
   const validCode = code.length === 6;
+
+  useEffect(() => {
+    if (wachttijd <= 0) return;
+    const t = setInterval(() => setWachttijd((w) => w - 1), 1000);
+    return () => clearInterval(t);
+  }, [wachttijd > 0]);
 
   async function sendCode() {
     setError(null);
@@ -51,34 +75,49 @@ export default function Telefoon() {
     const { error: err } = await supabase.auth.signInWithOtp({ phone: e164 });
     setLoading(false);
     if (err) {
-      setError(err.message);
+      setError(nlFout(err.message));
       return;
     }
+    setCode('');
+    setWachttijd(60);
     setStage('code');
   }
 
   async function verify() {
     setError(null);
     setLoading(true);
-    const { error: err } = await supabase.auth.verifyOtp({ phone: e164, token: code, type: 'sms' });
-    if (err) {
+    try {
+      const { error: err } = await supabase.auth.verifyOtp({ phone: e164, token: code, type: 'sms' });
+      if (err) {
+        setError(nlFout(err.message));
+        return;
+      }
+      const { data: userData } = await supabase.auth.getUser();
+      if (userData.user) {
+        // Het telefoonnummer staat alleen in Supabase Auth (auth.users),
+        // nooit in de profielen die andere gebruikers kunnen zien.
+        const coords = data.lat != null && data.lng != null
+          ? { lat: data.lat, lng: data.lng }
+          : await geocodeStad(data.locatie);
+        const { error: profielErr } = await supabase.from('profiles').upsert({
+          id: userData.user.id,
+          voornaam: data.voornaam.trim(),
+          leeftijd: Number(data.leeftijd),
+          locatie: data.locatie.trim(),
+          lat: coords?.lat ?? null,
+          lng: coords?.lng ?? null,
+          interesses: [...data.interesses, ...(data.vrijeInteresse ? [data.vrijeInteresse.trim()] : [])],
+        });
+        if (profielErr) {
+          setError('Je profiel opslaan lukt nu niet. Probeer het opnieuw.');
+          return;
+        }
+        registreerPush(userData.user.id);
+      }
+      router.push('/onboarding/eerste-blik');
+    } finally {
       setLoading(false);
-      setError(err.message);
-      return;
     }
-    const { data: userData } = await supabase.auth.getUser();
-    if (userData.user) {
-      await supabase.from('profiles').upsert({
-        id: userData.user.id,
-        voornaam: data.voornaam,
-        leeftijd: Number(data.leeftijd),
-        locatie: data.locatie,
-        telefoonnummer: e164,
-        interesses: [...data.interesses, ...(data.vrijeInteresse ? [data.vrijeInteresse] : [])],
-      });
-    }
-    setLoading(false);
-    router.push('/onboarding/eerste-blik');
   }
 
   async function devDoorgaan() {
@@ -88,7 +127,9 @@ export default function Telefoon() {
       voornaam: data.voornaam || 'Demo',
       leeftijd: Number(data.leeftijd) || 45,
       locatie: data.locatie || 'Amsterdam',
-      telefoonnummer: e164 || '+31600000000',
+      lat: data.lat,
+      lng: data.lng,
+      zoekradius_km: 25,
       interesses: [...data.interesses, ...(data.vrijeInteresse ? [data.vrijeInteresse] : [])],
       avatar_url: null,
       stem_url: null,
@@ -155,6 +196,21 @@ export default function Telefoon() {
               maxLength={6}
               error={error ?? undefined}
             />
+            <Pressable
+              onPress={sendCode}
+              disabled={wachttijd > 0 || loading}
+              style={{ marginTop: spacing.md, alignItems: 'center', paddingVertical: spacing.sm }}
+            >
+              <Text
+                variant="meta"
+                color={wachttijd > 0 ? colors.warmGrayLight : colors.terracotta}
+                style={{ fontWeight: '500' }}
+              >
+                {wachttijd > 0
+                  ? `Geen sms ontvangen? Opnieuw sturen kan over ${wachttijd} sec.`
+                  : 'Geen sms ontvangen? Stuur de code opnieuw.'}
+              </Text>
+            </Pressable>
           </>
         )}
       </View>

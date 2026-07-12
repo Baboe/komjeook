@@ -3,7 +3,9 @@ export type Profile = {
   voornaam: string;
   leeftijd: number;
   locatie: string;
-  telefoonnummer: string;
+  lat: number | null;
+  lng: number | null;
+  zoekradius_km: number;
   avatar_url: string | null;
   interesses: string[];
   stem_url: string | null;
@@ -18,9 +20,13 @@ export type Oproep = {
   activiteit: string;
   datum: string | null;
   locatie: string;
+  lat: number | null;
+  lng: number | null;
   foto_urls: string[];
   status: 'actief' | 'vervuld' | 'verlopen';
   gekozen_reactie_id: string | null;
+  vervuld_at: string | null;
+  feedback_prompted_at: string | null;
   created_at: string;
   user?: Profile;
 };
@@ -41,6 +47,7 @@ export type Bericht = {
   user_id: string;
   tekst: string | null;
   voice_url: string | null;
+  gelezen: boolean;
   created_at: string;
 };
 
@@ -50,5 +57,14 @@ export type Chat = {
   user_a_id: string;
   user_b_id: string;
   laatste_bericht_at: string;
+  created_at: string;
+};
+
+export type OntmoetingFeedback = {
+  id: string;
+  oproep_id: string;
+  user_id: string;
+  sterren: number;
+  iedereen_gekomen: boolean;
   created_at: string;
 };

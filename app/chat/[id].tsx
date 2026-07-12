@@ -39,6 +39,8 @@ export default function Chat() {
   const [other, setOther] = useState<Other | null>(null);
   const [context, setContext] = useState<{ activiteit: string; datum: string }>({ activiteit: '', datum: '' });
   const [hasSystem, setHasSystem] = useState(false);
+  const [feedbackVoor, setFeedbackVoor] = useState<string | null>(null);
+  const [stuurFout, setStuurFout] = useState(false);
   const listRef = useRef<FlatList>(null);
 
   const load = useCallback(async () => {
@@ -47,7 +49,7 @@ export default function Chat() {
     const { data: chat } = await supabase
       .from('chats')
       .select(
-        'user_a_id, user_b_id, oproep:oproepen(activiteit, datum, user_id), user_a:profiles!chats_user_a_id_fkey(id, voornaam, avatar_url), user_b:profiles!chats_user_b_id_fkey(id, voornaam, avatar_url)',
+        'user_a_id, user_b_id, oproep:oproepen(id, activiteit, datum, user_id, status, vervuld_at), user_a:profiles!chats_user_a_id_fkey(id, voornaam, avatar_url), user_b:profiles!chats_user_b_id_fkey(id, voornaam, avatar_url)',
       )
       .eq('id', id)
       .maybeSingle();
@@ -57,6 +59,25 @@ export default function Chat() {
       setOther(o);
       setContext({ activiteit: c.oproep?.activiteit ?? '', datum: c.oproep?.datum ?? '' });
       setHasSystem(c.oproep?.user_id === uid);
+
+      // Feedbackvraag tonen zodra de ontmoeting waarschijnlijk geweest is
+      // (24 uur na de match) en deze gebruiker nog niets heeft doorgegeven.
+      const oproep = c.oproep;
+      if (
+        oproep?.status === 'vervuld' &&
+        oproep.vervuld_at &&
+        Date.now() - new Date(oproep.vervuld_at).getTime() > 24 * 3600 * 1000
+      ) {
+        const { data: eigen } = await supabase
+          .from('ontmoeting_feedback')
+          .select('id')
+          .eq('oproep_id', oproep.id)
+          .eq('user_id', uid)
+          .maybeSingle();
+        setFeedbackVoor(eigen ? null : oproep.id);
+      } else {
+        setFeedbackVoor(null);
+      }
     }
     const { data: msgs } = await supabase
       .from('berichten')
@@ -64,6 +85,14 @@ export default function Chat() {
       .eq('chat_id', id)
       .order('created_at', { ascending: true });
     setBerichten((msgs as Bericht[]) ?? []);
+
+    // Berichten van de ander als gelezen markeren.
+    await supabase
+      .from('berichten')
+      .update({ gelezen: true })
+      .eq('chat_id', id)
+      .neq('user_id', uid)
+      .eq('gelezen', false);
   }, [id, session?.user]);
 
   useEffect(() => {
@@ -86,12 +115,17 @@ export default function Chat() {
     if (!tekst.trim() || !session?.user || !id) return;
     const t = tekst.trim();
     setTekst('');
-    await supabase.from('berichten').insert({
+    setStuurFout(false);
+    const { error } = await supabase.from('berichten').insert({
       chat_id: id,
       user_id: session.user.id,
       tekst: t,
     });
-    await supabase.from('chats').update({ laatste_bericht_at: new Date().toISOString() }).eq('id', id);
+    if (error) {
+      // Tekst terugzetten zodat er niets verloren gaat.
+      setTekst(t);
+      setStuurFout(true);
+    }
   }
 
   return (
@@ -118,6 +152,22 @@ export default function Chat() {
           </>
         ) : null}
       </View>
+
+      {feedbackVoor ? (
+        <Pressable onPress={() => router.push(`/feedback/${feedbackVoor}` as any)} style={styles.feedbackBanner}>
+          <View style={{ flex: 1 }}>
+            <Text variant="bodyMedium" color={colors.cream} style={{ fontSize: 13 }}>
+              Hoe was de ontmoeting?
+            </Text>
+            <Text variant="meta" color="rgba(245,240,232,0.7)">
+              Laat het even weten — het duurt tien seconden.
+            </Text>
+          </View>
+          <Text variant="bodyMedium" color={colors.cream} style={{ fontSize: 13 }}>
+            Vertel
+          </Text>
+        </Pressable>
+      ) : null}
 
       <KeyboardAvoidingView
         style={styles.flex}
@@ -169,6 +219,14 @@ export default function Chat() {
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
         />
 
+        {stuurFout ? (
+          <View style={styles.stuurFout}>
+            <Text variant="meta" color={colors.terracotta}>
+              Versturen lukt nu niet. Controleer je verbinding en probeer het opnieuw.
+            </Text>
+          </View>
+        ) : null}
+
         <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
           <TextInput
             value={tekst}
@@ -203,6 +261,22 @@ const styles = StyleSheet.create({
   back: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   list: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, gap: spacing.sm },
   system: { backgroundColor: '#F0EAE6', borderRadius: radius.md, padding: 10, marginBottom: spacing.md },
+  feedbackBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.aubergine,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.md,
+  },
+  stuurFout: {
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.white,
+  },
   bubbleWrap: { marginVertical: 3, flexDirection: 'row' },
   left: { justifyContent: 'flex-start' },
   right: { justifyContent: 'flex-end' },

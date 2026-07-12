@@ -4,6 +4,8 @@ export type OnboardingData = {
   voornaam: string;
   leeftijd: string;
   locatie: string;
+  lat: number | null;
+  lng: number | null;
   interesses: string[];
   vrijeInteresse: string;
   telefoonnummer: string;
@@ -13,6 +15,8 @@ const initial: OnboardingData = {
   voornaam: '',
   leeftijd: '',
   locatie: '',
+  lat: null,
+  lng: null,
   interesses: [],
   vrijeInteresse: '',
   telefoonnummer: '',

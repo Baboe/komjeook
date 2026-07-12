@@ -4,13 +4,27 @@ import { DMSans_400Regular, DMSans_500Medium } from '@expo-google-fonts/dm-sans'
 import { View, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useEffect } from 'react';
+import * as Notifications from 'expo-notifications';
 import { AuthProvider, useAuth } from '../lib/auth';
+import { routeVoorPush, PushData } from '../lib/notifications';
 import { colors } from '../constants/theme';
 
 function RootNav() {
   const { session, profile, loading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+
+  // Tik op een melding -> naar het juiste scherm. RLS bepaalt server-side
+  // wat er daadwerkelijk zichtbaar is, dus een ID in een melding geeft
+  // nooit toegang tot andermans gegevens.
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as PushData;
+      const route = routeVoorPush(data);
+      if (route) router.push(route as any);
+    });
+    return () => sub.remove();
+  }, [router]);
 
   useEffect(() => {
     if (loading) return;
@@ -43,6 +57,7 @@ function RootNav() {
       <Stack.Screen name="plaats" options={{ presentation: 'modal' }} />
       <Stack.Screen name="oproep/[id]" />
       <Stack.Screen name="chat/[id]" />
+      <Stack.Screen name="feedback/[oproepId]" />
     </Stack>
   );
 }

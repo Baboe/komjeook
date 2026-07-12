@@ -2,9 +2,11 @@ import { createContext, useContext, useEffect, useState, useCallback, ReactNode 
 import { Session } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
+import { registreerPush } from './notifications';
 import { Profile } from '../types/db';
 
-const DEV_SKIP = process.env.EXPO_PUBLIC_DEV_SKIP_AUTH === 'true';
+// __DEV__-guard: de testomweg kan nooit in een productie-build terechtkomen.
+const DEV_SKIP = __DEV__ && process.env.EXPO_PUBLIC_DEV_SKIP_AUTH === 'true';
 const DEV_PROFILE_KEY = 'ombaa_dev_profile';
 const DEV_SESSION = { user: { id: 'dev-user-id', phone: '+31600000000' } } as unknown as Session;
 
@@ -49,14 +51,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
-      if (data.session?.user) loadProfile(data.session.user.id).finally(() => setLoading(false));
-      else setLoading(false);
+      if (data.session?.user) {
+        loadProfile(data.session.user.id).finally(() => setLoading(false));
+        registreerPush(data.session.user.id);
+      } else setLoading(false);
     });
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
       setSession(sess);
-      if (sess?.user) loadProfile(sess.user.id);
-      else setProfile(null);
+      if (sess?.user) {
+        loadProfile(sess.user.id);
+        registreerPush(sess.user.id);
+      } else setProfile(null);
     });
 
     return () => {

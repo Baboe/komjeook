@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { View, StyleSheet, Pressable, ScrollView, Image } from 'react-native';
-import * as FileSystem from 'expo-file-system';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as ImagePicker from 'expo-image-picker';
@@ -12,10 +11,12 @@ import { VoiceBubble } from '../../components/VoiceBubble';
 import { PlusIcon, CameraIcon } from '../../components/Icon';
 import { draftStore, useDraft } from '../../lib/recording';
 import { supabase } from '../../lib/supabase';
+import { uploadBestand } from '../../lib/storage';
+import { geocodeStad } from '../../lib/geo';
 import { useAuth } from '../../lib/auth';
 import { colors, radius, spacing } from '../../constants/theme';
 
-type FieldName = 'activiteit' | 'datum' | 'locatie';
+type FieldName = 'datum' | 'locatie';
 
 type FieldRowProps = {
   label: string;
@@ -62,10 +63,21 @@ function FieldRow({ label, value, field, editing, onEdit, onChange }: FieldRowPr
   );
 }
 
+function nlPlaatsFout(e: any): string {
+  const m = String(e?.message ?? e ?? '').toLowerCase();
+  if (m.includes('te_veel_oproepen')) return 'Je hebt vandaag al vijf oproepen geplaatst. Morgen kan het weer.';
+  if (m.includes('te_veel_reacties')) return 'Je hebt vandaag al veel gereageerd. Morgen kan het weer.';
+  if (m.includes('duplicate') || m.includes('23505')) return 'Je hebt al gereageerd op deze oproep.';
+  if (m.includes('network') || m.includes('fetch')) return 'Geen verbinding. Controleer je internet en probeer het opnieuw.';
+  return 'Versturen lukt nu niet. Probeer het opnieuw.';
+}
+
 export default function Bevestigen() {
   const router = useRouter();
+  const { reactieVoor } = useLocalSearchParams<{ reactieVoor?: string }>();
+  const isReactie = typeof reactieVoor === 'string' && reactieVoor.length > 0;
   const draft = useDraft();
-  const { session, profile } = useAuth();
+  const { session, profile, refreshProfile } = useAuth();
   const [editing, setEditing] = useState<FieldName | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,14 +89,14 @@ export default function Bevestigen() {
     }
   }, [profile?.locatie]);
 
-  function handleChange(field: FieldName, value: string) {
+  function handleChange(field: FieldName | 'activiteit', value: string) {
     draftStore.set({ [field]: value } as any);
   }
 
   async function pickFoto() {
     if (draft.fotos.length >= 3) return;
     const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       quality: 0.8,
     });
     if (!res.canceled && res.assets[0]) {
@@ -92,14 +104,35 @@ export default function Bevestigen() {
     }
   }
 
-  async function uploadFile(bucket: string, path: string, uri: string, contentType: string) {
-    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    const { error } = await supabase.storage.from(bucket).upload(path, bytes.buffer, { contentType });
-    if (error) throw error;
-    return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+  // Eerste opname wordt meteen de profielstem: zo is de stem-eis vervuld
+  // zonder extra drempel voor de gebruiker.
+  async function zetStemAlsNodig(voicePath: string) {
+    if (!profile || profile.stem_url) return;
+    await supabase.from('profiles').update({ stem_url: voicePath }).eq('id', profile.id);
+    await refreshProfile();
+  }
+
+  async function verstuurReactie() {
+    if (!session?.user || !draft.uri || !isReactie) return;
+    setError(null);
+    setLoading(true);
+    try {
+      const userId = session.user.id;
+      const voicePath = await uploadBestand('voices', `${userId}/${Date.now()}.m4a`, draft.uri, 'audio/mp4');
+      const { error: insErr } = await supabase.from('reacties').insert({
+        oproep_id: reactieVoor,
+        user_id: userId,
+        voice_url: voicePath,
+      });
+      if (insErr) throw insErr;
+      await zetStemAlsNodig(voicePath);
+      router.replace({ pathname: '/plaats/geplaatst', params: { reactie: '1' } });
+    } catch (e: any) {
+      setError(nlPlaatsFout(e));
+      if (__DEV__) console.error('[reactie]', e?.message ?? e);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function plaats() {
@@ -110,32 +143,77 @@ export default function Bevestigen() {
       const userId = session.user.id;
       const ts = Date.now();
 
-      const voiceUrl = await uploadFile('voices', `${userId}/${ts}.m4a`, draft.uri, 'audio/mp4');
+      const voicePath = await uploadBestand('voices', `${userId}/${ts}.m4a`, draft.uri, 'audio/mp4');
 
-      const fotoUrls: string[] = [];
+      const fotoPaths: string[] = [];
       for (let i = 0; i < draft.fotos.length; i++) {
-        const url = await uploadFile('fotos', `${userId}/${ts}_${i}.jpg`, draft.fotos[i], 'image/jpeg');
-        fotoUrls.push(url);
+        const p = await uploadBestand('fotos', `${userId}/${ts}_${i}.jpg`, draft.fotos[i], 'image/jpeg');
+        fotoPaths.push(p);
       }
 
-      const locatie = draft.locatie || profile?.locatie || '';
+      const locatie = (draft.locatie || profile?.locatie || '').trim();
+      // Coördinaten op stadsniveau voor het radius-filter van anderen.
+      let coords = locatie === profile?.locatie ? { lat: profile?.lat ?? null, lng: profile?.lng ?? null } : null;
+      if (!coords || coords.lat == null) coords = (await geocodeStad(locatie)) ?? { lat: null, lng: null };
+
       const { error: insErr } = await supabase.from('oproepen').insert({
         user_id: userId,
-        voice_url: voiceUrl,
-        activiteit: draft.activiteit || null,
-        datum: draft.datum || null,
+        voice_url: voicePath,
+        activiteit: draft.activiteit.trim(),
+        datum: draft.datum.trim() || null,
         locatie,
-        foto_urls: fotoUrls,
+        lat: coords.lat,
+        lng: coords.lng,
+        foto_urls: fotoPaths,
         status: 'actief',
       });
       if (insErr) throw insErr;
+      await zetStemAlsNodig(voicePath);
       router.replace('/plaats/geplaatst');
     } catch (e: any) {
-      setError('Plaatsen lukt nu niet. Probeer het opnieuw.');
+      setError(nlPlaatsFout(e));
       if (__DEV__) console.error('[plaats]', e?.message ?? e);
     } finally {
       setLoading(false);
     }
+  }
+
+  const activiteitIngevuld = draft.activiteit.trim().length >= 3;
+
+  if (isReactie) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <StatusBar style="dark" />
+        <View style={styles.topbar}>
+          <View style={{ width: 64 }} />
+          <Text style={styles.title}>Klinkt goed?</Text>
+          <Pressable onPress={() => router.back()} hitSlop={12} style={styles.cancel}>
+            <Text variant="bodyMedium" color={colors.warmGray} style={{ fontSize: 14 }}>
+              Annuleer
+            </Text>
+          </Pressable>
+        </View>
+
+        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+          {draft.uri ? <VoiceBubble uri={draft.uri} durationSec={draft.duration} variant="cream" /> : null}
+
+          <Text variant="body" color={colors.warmGray} style={{ marginTop: spacing.lg }}>
+            Dit is wat de plaatser van de oproep te horen krijgt. Opnieuw opnemen kan ook — ga dan even
+            terug.
+          </Text>
+
+          {error ? (
+            <Text variant="meta" color={colors.terracotta} style={{ marginTop: spacing.md }}>
+              {error}
+            </Text>
+          ) : null}
+
+          <View style={{ marginTop: spacing.xl }}>
+            <Button title="Stuur mijn reactie" loading={loading} onPress={verstuurReactie} />
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
   }
 
   return (
@@ -158,7 +236,17 @@ export default function Bevestigen() {
           Jouw activiteit:
         </Text>
 
-        <FieldRow label="Activiteit" value={draft.activiteit} field="activiteit" editing={editing} onEdit={setEditing} onChange={handleChange} />
+        <Input
+          label="Wat ga je doen?"
+          value={draft.activiteit}
+          onChangeText={(t) => handleChange('activiteit', t)}
+          placeholder="Bijv. wandelen in het Vondelpark"
+          maxLength={120}
+          hint={activiteitIngevuld ? undefined : 'Schrijf kort op wat je gaat doen, dan weten mensen waarop ze reageren.'}
+        />
+
+        <View style={{ height: spacing.md }} />
+
         <FieldRow label="Wanneer" value={draft.datum} field="datum" editing={editing} onEdit={setEditing} onChange={handleChange} />
         <FieldRow label="Waar" value={draft.locatie || profile?.locatie || ''} field="locatie" editing={editing} onEdit={setEditing} onChange={handleChange} />
 
@@ -200,7 +288,7 @@ export default function Bevestigen() {
         ) : null}
 
         <View style={{ marginTop: spacing.xl }}>
-          <Button title="Plaatsen" loading={loading} onPress={plaats} />
+          <Button title="Plaatsen" disabled={!activiteitIngevuld} loading={loading} onPress={plaats} />
         </View>
       </ScrollView>
     </SafeAreaView>

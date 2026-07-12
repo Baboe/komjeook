@@ -111,6 +111,20 @@ export const MapPinIcon = ({ size = 24, color = colors.aubergine, strokeWidth = 
   </Svg>
 );
 
+export const StarIcon = ({
+  size = 24,
+  color = colors.aubergine,
+  strokeWidth = 1.75,
+  filled = false,
+}: IconProps & { filled?: boolean }) => (
+  <Svg {...baseProps(size, color, strokeWidth)}>
+    <Path
+      d="M12 3l2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3 6.4 20.2l1.1-6.2L3 9.6l6.2-.9L12 3z"
+      fill={filled ? color : 'none'}
+    />
+  </Svg>
+);
+
 export const CameraIcon = ({ size = 24, color = colors.aubergine, strokeWidth = 1.75 }: IconProps) => (
   <Svg {...baseProps(size, color, strokeWidth)}>
     <Path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" />

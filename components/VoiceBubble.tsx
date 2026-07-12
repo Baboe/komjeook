@@ -4,6 +4,7 @@ import { Audio } from 'expo-av';
 import { PlayIcon, PauseIcon } from './Icon';
 import { Text } from './Text';
 import { Waveform } from './Waveform';
+import { signedUrl } from '../lib/storage';
 import { colors, radius, spacing } from '../constants/theme';
 
 type Props = {
@@ -24,6 +25,7 @@ export function VoiceBubble({ uri, durationSec = 0, variant = 'cream' }: Props) 
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(durationSec * 1000);
+  const [mislukt, setMislukt] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -32,28 +34,37 @@ export function VoiceBubble({ uri, durationSec = 0, variant = 'cream' }: Props) 
   }, []);
 
   async function toggle() {
-    if (!soundRef.current) {
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
-      const { sound } = await Audio.Sound.createAsync({ uri }, { shouldPlay: true });
-      soundRef.current = sound;
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (!status.isLoaded) return;
-        setPosition(status.positionMillis);
-        if (status.durationMillis) setDuration(status.durationMillis);
-        if (status.didJustFinish) {
-          setPlaying(false);
-          setPosition(0);
-        } else {
-          setPlaying(status.isPlaying);
-        }
-      });
-      setPlaying(true);
-      return;
+    try {
+      setMislukt(false);
+      if (!soundRef.current) {
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+        // Voice-opnames staan in een privé-bucket; het pad wordt hier omgezet
+        // naar een tijdelijke afspeel-URL.
+        const afspeelUri = await signedUrl('voices', uri);
+        const { sound } = await Audio.Sound.createAsync({ uri: afspeelUri }, { shouldPlay: true });
+        soundRef.current = sound;
+        sound.setOnPlaybackStatusUpdate((status) => {
+          if (!status.isLoaded) return;
+          setPosition(status.positionMillis);
+          if (status.durationMillis) setDuration(status.durationMillis);
+          if (status.didJustFinish) {
+            setPlaying(false);
+            setPosition(0);
+          } else {
+            setPlaying(status.isPlaying);
+          }
+        });
+        setPlaying(true);
+        return;
+      }
+      const status = await soundRef.current.getStatusAsync();
+      if (!status.isLoaded) return;
+      if (status.isPlaying) await soundRef.current.pauseAsync();
+      else await soundRef.current.playAsync();
+    } catch {
+      setMislukt(true);
+      setPlaying(false);
     }
-    const status = await soundRef.current.getStatusAsync();
-    if (!status.isLoaded) return;
-    if (status.isPlaying) await soundRef.current.pauseAsync();
-    else await soundRef.current.playAsync();
   }
 
   const progress = duration > 0 ? Math.min(position / duration, 1) : 0;
@@ -72,7 +83,7 @@ export function VoiceBubble({ uri, durationSec = 0, variant = 'cream' }: Props) 
       </Pressable>
       <Waveform progress={progress} color={waveColor} playedColor={playBg} seed={uri} />
       <Text variant="meta" color={textColor} style={styles.time}>
-        {fmt(remaining)}
+        {mislukt ? '· · ·' : fmt(remaining)}
       </Text>
     </View>
   );

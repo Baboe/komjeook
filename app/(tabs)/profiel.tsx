@@ -1,11 +1,16 @@
-import { View, StyleSheet, Pressable, ScrollView } from 'react-native';
+import { useState } from 'react';
+import { View, StyleSheet, Pressable, ScrollView, Alert, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Screen } from '../../components/Screen';
 import { Text } from '../../components/Text';
 import { Avatar } from '../../components/Avatar';
 import { Button } from '../../components/Button';
+import { VoiceBubble } from '../../components/VoiceBubble';
 import { useAuth } from '../../lib/auth';
+import { supabase } from '../../lib/supabase';
 import { colors, fonts, radius, spacing } from '../../constants/theme';
+
+const RADIUS_OPTIES = [10, 25, 50, 100];
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
@@ -17,8 +22,44 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 export default function Profiel() {
-  const { session, profile, signOut } = useAuth();
+  const { session, profile, signOut, refreshProfile } = useAuth();
   const router = useRouter();
+  const [radiusBezig, setRadiusBezig] = useState(false);
+  const [verwijderBezig, setVerwijderBezig] = useState(false);
+
+  async function zetRadius(km: number) {
+    if (!profile || radiusBezig) return;
+    setRadiusBezig(true);
+    await supabase.from('profiles').update({ zoekradius_km: km }).eq('id', profile.id);
+    await refreshProfile();
+    setRadiusBezig(false);
+  }
+
+  function verwijderAccount() {
+    Alert.alert(
+      'Account verwijderen',
+      'Je profiel, oproepen, reacties, gesprekken en opnames worden definitief verwijderd. Dit kan niet ongedaan worden gemaakt.',
+      [
+        { text: 'Toch houden', style: 'cancel' },
+        {
+          text: 'Definitief verwijderen',
+          style: 'destructive',
+          onPress: async () => {
+            setVerwijderBezig(true);
+            const { error } = await supabase.rpc('verwijder_account');
+            setVerwijderBezig(false);
+            if (error) {
+              Alert.alert('Dat lukt nu niet', 'Probeer het later opnieuw.');
+              return;
+            }
+            await supabase.auth.signOut().catch(() => {});
+            await signOut().catch(() => {});
+            router.replace('/(tabs)');
+          },
+        },
+      ],
+    );
+  }
 
   if (!session) {
     return (
@@ -63,7 +104,49 @@ export default function Profiel() {
           <View style={styles.sep} />
           <Row label="Locatie" value={profile?.locatie ?? '—'} />
           <View style={styles.sep} />
-          <Row label="Stem" value={profile?.stem_url ? 'Opgenomen' : 'Nog niet opgenomen'} />
+          <Row label="Telefoonnummer" value={session.user?.phone ? `+${session.user.phone.replace(/^\+/, '')}` : '—'} />
+          <Text variant="meta" color={colors.warmGrayLight} style={{ marginTop: 2 }}>
+            Alleen jij ziet je telefoonnummer. Anderen nooit.
+          </Text>
+        </View>
+
+        <View style={styles.card}>
+          <Text variant="label" style={{ marginBottom: spacing.sm }}>
+            Jouw stem
+          </Text>
+          {profile?.stem_url ? (
+            <VoiceBubble uri={profile.stem_url} variant="cream" />
+          ) : (
+            <Text variant="body" color={colors.warmGray}>
+              Nog niet opgenomen. Je eerste oproep of reactie wordt vanzelf jouw stem.
+            </Text>
+          )}
+        </View>
+
+        <View style={styles.card}>
+          <Text variant="label" style={{ marginBottom: spacing.xs }}>
+            Zoekradius
+          </Text>
+          <Text variant="meta" color={colors.warmGray} style={{ marginBottom: spacing.sm }}>
+            Hoe ver mogen oproepen van {profile?.locatie ?? 'jouw stad'} zijn?
+          </Text>
+          <View style={styles.radiusRij}>
+            {RADIUS_OPTIES.map((km) => {
+              const actief = (profile?.zoekradius_km ?? 25) === km;
+              return (
+                <Pressable
+                  key={km}
+                  onPress={() => zetRadius(km)}
+                  disabled={radiusBezig}
+                  style={[styles.radiusKnop, actief && styles.radiusKnopActief]}
+                >
+                  <Text variant="meta" color={actief ? colors.cream : colors.textMid} style={{ fontWeight: '500' }}>
+                    {km} km
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
 
         {profile?.interesses?.length ? (
@@ -84,9 +167,22 @@ export default function Profiel() {
         ) : null}
 
         <View style={{ marginTop: spacing.xl }}>
+          <Pressable
+            onPress={() => Linking.openURL('https://ombaa.com/privacy')}
+            style={styles.signout}
+          >
+            <Text variant="bodyMedium" color={colors.warmGray}>
+              Privacyverklaring
+            </Text>
+          </Pressable>
           <Pressable onPress={signOut} style={styles.signout}>
             <Text variant="bodyMedium" color={colors.warmGray}>
               Uitloggen
+            </Text>
+          </Pressable>
+          <Pressable onPress={verwijderAccount} disabled={verwijderBezig} style={styles.signout}>
+            <Text variant="bodyMedium" color={colors.terracotta}>
+              {verwijderBezig ? 'Bezig met verwijderen...' : 'Account verwijderen'}
             </Text>
           </Pressable>
         </View>
@@ -110,6 +206,17 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10 },
   sep: { height: 1, backgroundColor: colors.creamDark },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  radiusRij: { flexDirection: 'row', gap: spacing.sm },
+  radiusKnop: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 9,
+    borderRadius: radius.pill,
+    borderWidth: 1.5,
+    borderColor: colors.creamDark,
+    backgroundColor: colors.cream,
+  },
+  radiusKnopActief: { backgroundColor: colors.aubergine, borderColor: colors.aubergine },
   chip: { backgroundColor: colors.cream, paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill },
   signout: { alignItems: 'center', paddingVertical: spacing.md },
 });

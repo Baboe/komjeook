@@ -1,6 +1,6 @@
 import { View, FlatList, StyleSheet, Pressable } from 'react-native';
-import { useRouter } from 'expo-router';
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useState, useCallback, useMemo } from 'react';
 import { BezoekerBanner } from '../../components/BezoekerBanner';
 import { Screen } from '../../components/Screen';
 import { Text } from '../../components/Text';
@@ -16,7 +16,7 @@ function StatusPill({ status, reacties }: { status: Oproep['status']; reacties: 
     return (
       <View style={[styles.pill, { backgroundColor: '#F0EAE6' }]}>
         <Text variant="meta" color={colors.terracotta} style={{ fontWeight: '500' }}>
-          Match gevonden
+          Jullie gaan samen
         </Text>
       </View>
     );
@@ -58,9 +58,11 @@ export default function MijnOproepen() {
     setItems(mapped);
   }, [session?.user]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
 
   const sections = useMemo<Section[]>(() => {
     const actief = items.filter((o) => o.status === 'actief');

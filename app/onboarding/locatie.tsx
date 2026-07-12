@@ -24,7 +24,15 @@ export default function Locatie() {
       const pos = await Location.getCurrentPositionAsync({});
       const geo = await Location.reverseGeocodeAsync(pos.coords);
       const city = geo[0]?.city ?? geo[0]?.subregion ?? '';
-      if (city) onboardingStore.set({ locatie: city });
+      // We bewaren alleen de stad en de stadscoördinaten, nooit de exacte plek.
+      if (city) {
+        const centroid = await Location.geocodeAsync(city).catch(() => []);
+        onboardingStore.set({
+          locatie: city,
+          lat: centroid[0]?.latitude ?? pos.coords.latitude,
+          lng: centroid[0]?.longitude ?? pos.coords.longitude,
+        });
+      }
     } finally {
       setDetecting(false);
     }
@@ -64,7 +72,7 @@ export default function Locatie() {
         <Input
           label="Stad"
           value={data.locatie}
-          onChangeText={(t) => onboardingStore.set({ locatie: t })}
+          onChangeText={(t) => onboardingStore.set({ locatie: t, lat: null, lng: null })}
           autoCapitalize="words"
           placeholder="Amsterdam"
         />

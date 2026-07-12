@@ -1,6 +1,6 @@
 import { View, FlatList, StyleSheet, Pressable } from 'react-native';
-import { useRouter } from 'expo-router';
-import { useEffect, useState, useCallback } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useState, useCallback } from 'react';
 import { BezoekerBanner } from '../../components/BezoekerBanner';
 import { Screen } from '../../components/Screen';
 import { Text } from '../../components/Text';
@@ -48,17 +48,20 @@ export default function Berichten() {
     const { data } = await supabase
       .from('chats')
       .select(
-        'id, oproep:oproepen(activiteit, datum), user_a:profiles!chats_user_a_id_fkey(id, voornaam, leeftijd, avatar_url), user_b:profiles!chats_user_b_id_fkey(id, voornaam, leeftijd, avatar_url), laatste_bericht_at, berichten:berichten(tekst, voice_url, created_at, user_id)',
+        'id, oproep:oproepen(activiteit, datum), user_a:profiles!chats_user_a_id_fkey(id, voornaam, leeftijd, avatar_url), user_b:profiles!chats_user_b_id_fkey(id, voornaam, leeftijd, avatar_url), laatste_bericht_at, berichten:berichten(tekst, voice_url, created_at, user_id, gelezen)',
       )
       .or(`user_a_id.eq.${uid},user_b_id.eq.${uid}`)
       .order('laatste_bericht_at', { ascending: false });
 
     const mapped: Row[] = (data ?? []).map((c: any) => {
       const other = c.user_a?.id === uid ? c.user_b : c.user_a;
-      const lastMsg = (c.berichten ?? []).slice(-1)[0];
+      const msgs = [...(c.berichten ?? [])].sort(
+        (a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      );
+      const lastMsg = msgs.slice(-1)[0];
       const prefix = lastMsg?.user_id === uid ? 'Jij: ' : '';
       const text = lastMsg?.tekst ?? (lastMsg?.voice_url ? 'Spraakbericht' : '');
-      const unread = !!lastMsg && lastMsg.user_id !== uid;
+      const unread = msgs.some((m: any) => m.user_id !== uid && !m.gelezen);
       return {
         chat_id: c.id,
         other_id: other?.id,
@@ -75,9 +78,12 @@ export default function Berichten() {
     setRows(mapped);
   }, [session?.user]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  // Herladen bij elke focus: gelezen-status klopt dan na het sluiten van een chat.
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
 
   return (
     <Screen padded={false} edges={['top']}>

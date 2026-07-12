@@ -16,16 +16,24 @@ export default function Home() {
   const { session, profile } = useAuth();
   const [oproepen, setOproepen] = useState<Oproep[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [laden, setLaden] = useState(true);
+  const [fout, setFout] = useState(false);
 
   const load = useCallback(async () => {
-    const { data } = await supabase
-      .from('oproepen')
-      .select('*, user:profiles(*)')
-      .eq('status', 'actief')
-      .order('created_at', { ascending: false })
-      .limit(50);
+    setFout(false);
+    // Radius-filter op stadsniveau: de zelf ingestelde zoekradius bepaalt
+    // welke oproepen je ziet. Zonder profiel (bezoeker) tonen we de nieuwste.
+    const params =
+      profile?.lat != null && profile?.lng != null
+        ? { p_lat: profile.lat, p_lng: profile.lng, p_radius_km: profile.zoekradius_km ?? 25 }
+        : {};
+    const { data, error } = await supabase
+      .rpc('feed_oproepen', params)
+      .select('*, user:profiles(id, voornaam, leeftijd, locatie, avatar_url)');
+    if (error) setFout(true);
     setOproepen((data as Oproep[]) ?? []);
-  }, []);
+    setLaden(false);
+  }, [profile?.lat, profile?.lng, profile?.zoekradius_km]);
 
   useEffect(() => {
     load();
@@ -36,7 +44,9 @@ export default function Home() {
       <View style={styles.header}>
         <Text variant="display">Kom je ook?</Text>
         <Text variant="body" color={colors.warmGray} style={{ marginTop: spacing.xs }}>
-          Oproepen in {profile?.locatie ?? 'de buurt'}.
+          {profile?.locatie && profile.lat != null
+            ? `Oproepen binnen ${profile.zoekradius_km ?? 25} km van ${profile.locatie}.`
+            : 'Oproepen in de buurt.'}
         </Text>
       </View>
 
@@ -79,14 +89,28 @@ export default function Home() {
           />
         }
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text variant="h2" style={{ textAlign: 'center', marginBottom: spacing.sm }}>
-              Nog stil hier
-            </Text>
-            <Text variant="body" color={colors.warmGray} style={{ textAlign: 'center' }}>
-              Zin om de eerste te zijn? Tik op "Spreek iets in".
-            </Text>
-          </View>
+          laden ? (
+            <View style={styles.empty}>
+              <Text variant="body" color={colors.warmGray} style={{ textAlign: 'center' }}>
+                Even geduld...
+              </Text>
+            </View>
+          ) : fout ? (
+            <View style={styles.empty}>
+              <Text variant="body" color={colors.warmGray} style={{ textAlign: 'center' }}>
+                Laden lukt nu niet. Trek de lijst omlaag om het opnieuw te proberen.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.empty}>
+              <Text variant="h2" style={{ textAlign: 'center', marginBottom: spacing.sm }}>
+                Nog stil hier
+              </Text>
+              <Text variant="body" color={colors.warmGray} style={{ textAlign: 'center' }}>
+                Zin om de eerste te zijn? Tik op "Spreek iets in".
+              </Text>
+            </View>
+          )
         }
       />
     </Screen>

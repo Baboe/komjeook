@@ -61,6 +61,12 @@
         {
           "photosPermission": "Ombaa gebruikt je foto's zodat je optioneel een foto bij je oproep kunt zetten."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#C4614A"
+        }
       ]
     ],
     "experiments": {

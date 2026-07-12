@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, Pressable, Modal } from 'react-native';
+import { View, StyleSheet, ScrollView, Pressable, Modal, Image } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSignedUrl } from '../../lib/storage';
 import { Screen } from '../../components/Screen';
 import { Text } from '../../components/Text';
 import { Avatar } from '../../components/Avatar';
@@ -18,6 +19,13 @@ function tijd(iso: string) {
   return d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
 }
 
+// Foto's staan in een privé-bucket en worden via een tijdelijke URL getoond.
+function Foto({ path }: { path: string }) {
+  const url = useSignedUrl('fotos', path);
+  if (!url) return <View style={[styles.foto, { backgroundColor: colors.creamDark }]} />;
+  return <Image source={{ uri: url }} style={styles.foto} />;
+}
+
 export default function OproepScherm() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -26,18 +34,26 @@ export default function OproepScherm() {
   const [reacties, setReacties] = useState<Reactie[]>([]);
   const [played, setPlayed] = useState<Record<string, boolean>>({});
   const [kiezen, setKiezen] = useState(false);
+  const [laden, setLaden] = useState(true);
+  const [fout, setFout] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ chatId: string; other: Reactie } | null>(null);
 
   const isMine = session?.user?.id && oproep?.user_id === session.user.id;
+  const mijnReactie = reacties.find((r) => r.user_id === session?.user?.id);
+
+  const PROFIEL_VELDEN = 'id, voornaam, leeftijd, locatie, avatar_url, stem_url';
 
   const load = useCallback(async () => {
     if (!id) return;
-    const [{ data: o }, { data: r }] = await Promise.all([
-      supabase.from('oproepen').select('*, user:profiles(*)').eq('id', id).maybeSingle(),
-      supabase.from('reacties').select('*, user:profiles(*)').eq('oproep_id', id).order('created_at', { ascending: true }),
+    setFout(null);
+    const [{ data: o, error: oErr }, { data: r }] = await Promise.all([
+      supabase.from('oproepen').select(`*, user:profiles(${PROFIEL_VELDEN})`).eq('id', id).maybeSingle(),
+      supabase.from('reacties').select(`*, user:profiles(${PROFIEL_VELDEN})`).eq('oproep_id', id).order('created_at', { ascending: true }),
     ]);
+    if (oErr) setFout('Laden lukt nu niet. Trek omlaag om het opnieuw te proberen.');
     setOproep((o as Oproep) ?? null);
     setReacties((r as Reactie[]) ?? []);
+    setLaden(false);
   }, [id]);
 
   useEffect(() => {
@@ -47,29 +63,17 @@ export default function OproepScherm() {
   async function kies(reactie: Reactie) {
     if (!session?.user || !oproep) return;
     setKiezen(true);
+    setFout(null);
     try {
-      await supabase.from('reacties').update({ status: 'gekozen' }).eq('id', reactie.id);
-      await supabase
-        .from('reacties')
-        .update({ status: 'niet_gekozen' })
-        .eq('oproep_id', oproep.id)
-        .neq('id', reactie.id);
-      await supabase
-        .from('oproepen')
-        .update({ status: 'vervuld', gekozen_reactie_id: reactie.id })
-        .eq('id', oproep.id);
-      const { data: chat } = await supabase
-        .from('chats')
-        .insert({
-          oproep_id: oproep.id,
-          user_a_id: session.user.id,
-          user_b_id: reactie.user_id,
-        })
-        .select()
-        .single();
-      if (chat) {
-        setConfirm({ chatId: chat.id, other: reactie });
+      // Eén atomaire server-side stap: reactie kiezen, rest afwijzen,
+      // oproep vervullen en de chat aanmaken.
+      const { data: chatId, error } = await supabase.rpc('kies_reactie', { p_reactie_id: reactie.id });
+      if (error || !chatId) {
+        setFout('Kiezen lukt nu niet. Probeer het opnieuw.');
+        return;
       }
+      setConfirm({ chatId: chatId as string, other: reactie });
+      load();
     } finally {
       setKiezen(false);
     }
@@ -84,11 +88,24 @@ export default function OproepScherm() {
     router.push({ pathname: '/plaats', params: { reactieVoor: oproep.id } });
   }
 
+  if (laden) {
+    return (
+      <Screen>
+        <StepHeader />
+        <Text variant="body" color={colors.warmGray}>
+          Even geduld...
+        </Text>
+      </Screen>
+    );
+  }
+
   if (!oproep) {
     return (
       <Screen>
         <StepHeader />
-        <Text variant="body">Laden...</Text>
+        <Text variant="body" color={colors.warmGray}>
+          Deze oproep bestaat niet meer.
+        </Text>
       </Screen>
     );
   }
@@ -124,6 +141,14 @@ export default function OproepScherm() {
               <Text variant="meta" color={colors.terracotta} style={{ fontWeight: '500' }}>
                 {oproep.activiteit}
               </Text>
+            </View>
+          ) : null}
+
+          {oproep.foto_urls?.length ? (
+            <View style={styles.fotos}>
+              {oproep.foto_urls.map((p) => (
+                <Foto key={p} path={p} />
+              ))}
             </View>
           ) : null}
 
@@ -185,9 +210,31 @@ export default function OproepScherm() {
             </View>
           ) : (
             <View style={{ marginTop: spacing.xl }}>
-              <Button title="Ik kom!" onPress={reageer} />
+              {oproep.status !== 'actief' ? (
+                <Text variant="body" color={colors.warmGray} style={{ textAlign: 'center' }}>
+                  {oproep.user?.voornaam
+                    ? `${oproep.user.voornaam} heeft iemand gevonden voor deze activiteit.`
+                    : 'Deze oproep is vervuld.'}
+                </Text>
+              ) : mijnReactie ? (
+                <Text variant="body" color={colors.warmGray} style={{ textAlign: 'center' }}>
+                  Je hebt gereageerd. {oproep.user?.voornaam ?? 'De plaatser'} luistert naar de reacties.
+                </Text>
+              ) : (
+                <Button title="Ik kom!" onPress={reageer} />
+              )}
+              {fout ? (
+                <Text variant="meta" color={colors.terracotta} style={{ textAlign: 'center', marginTop: spacing.md }}>
+                  {fout}
+                </Text>
+              ) : null}
             </View>
           )}
+          {isMine && fout ? (
+            <Text variant="meta" color={colors.terracotta} style={{ marginTop: spacing.md }}>
+              {fout}
+            </Text>
+          ) : null}
         </ScrollView>
       </Screen>
 
@@ -210,7 +257,7 @@ export default function OproepScherm() {
               Leuk{oproep.user?.voornaam ? `, ${oproep.user.voornaam}` : ''}!{'\n'}Jullie gaan samen.
             </Text>
             <Text variant="body" color={colors.warmGray} style={{ textAlign: 'center', marginTop: spacing.sm }}>
-              We laten {confirm?.other.user?.voornaam} weten dat je met hem of haar wil gaan.
+              We laten {confirm?.other.user?.voornaam} weten.
             </Text>
             <View style={{ marginTop: spacing.lg, width: '100%' }}>
               <Button
@@ -244,6 +291,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     marginTop: spacing.md,
   },
+  fotos: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  foto: { width: 84, height: 84, borderRadius: radius.md },
   reactie: {
     backgroundColor: colors.white,
     borderRadius: radius.lg,
