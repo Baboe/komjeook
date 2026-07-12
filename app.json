@@ -1,0 +1,70 @@
+{
+  "expo": {
+    "name": "Ombaa",
+    "slug": "ombaa",
+    "scheme": "ombaa",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F5F0E8"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ombaa.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Ombaa gebruikt de microfoon om je oproep op te nemen.",
+        "NSPhotoLibraryUsageDescription": "Ombaa gebruikt je foto's zodat je optioneel een foto bij je oproep kunt zetten.",
+        "NSLocationWhenInUseUsageDescription": "Ombaa gebruikt je locatie om activiteiten in de buurt te tonen."
+      }
+    },
+    "android": {
+      "package": "com.ombaa.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#F5F0E8",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "RECORD_AUDIO",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-secure-store",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Ombaa gebruikt de microfoon om je oproep op te nemen."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Ombaa gebruikt je locatie om activiteiten in de buurt te tonen."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Ombaa gebruikt je foto's zodat je optioneel een foto bij je oproep kunt zetten."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
