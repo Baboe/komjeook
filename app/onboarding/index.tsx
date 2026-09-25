@@ -5,14 +5,10 @@ import { useRouter } from 'expo-router';
 import { Logo } from '../../components/Logo';
 import { Text } from '../../components/Text';
 import { Button } from '../../components/Button';
-import { useAuth } from '../../lib/auth';
 import { colors, fonts, fontSize, spacing } from '../../constants/theme';
-
-const DEV_SKIP = process.env.EXPO_PUBLIC_DEV_SKIP_AUTH === 'true';
 
 export default function Splash() {
   const router = useRouter();
-  const { devLogin } = useAuth();
 
   function kijkRond() {
     router.replace('/(tabs)');
