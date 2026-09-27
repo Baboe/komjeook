@@ -1,0 +1,36 @@
+# Route 2 + 3 — Stem opnemen, terugluisteren, oproep plaatsen (gebruiker A, al ingelogd na flow 01)
+appId: com.ombaa.app
+tags:
+  - kernroute
+---
+- launchApp:
+    permissions:
+      all: allow
+- extendedWaitUntil:
+    visible: "Spreek iets in"
+    timeout: 30000
+- tapOn: "Spreek iets in"
+- assertVisible: "Wat ga jij doen?"
+# Houd de microfoonknop ingedrukt (~3 s) — de knop staat midden op het scherm
+- longPressOn:
+    point: "50%,50%"
+- extendedWaitUntil:
+    visible: "Klopt dit?"
+    timeout: 10000
+- takeScreenshot: screenshots/02-opname-klaar
+# Opnieuw opnemen: terug en nog een keer
+- tapOn: "Annuleer"
+- assertVisible: "Wat ga jij doen?"
+- longPressOn:
+    point: "50%,50%"
+- extendedWaitUntil:
+    visible: "Klopt dit?"
+    timeout: 10000
+- tapOn: "Bijv. wandelen in het Vondelpark"
+- inputText: "Wandelen in het Wilhelminapark"
+- hideKeyboard
+- tapOn: "Plaatsen"
+- extendedWaitUntil:
+    visible: "Je oproep staat live.*"
+    timeout: 30000
+- takeScreenshot: screenshots/03-geplaatst

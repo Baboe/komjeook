@@ -1,0 +1,19 @@
+# Route 6 — App volledig sluiten en heropenen: nog ingelogd. Daarna uitloggen.
+appId: com.ombaa.app
+tags:
+  - kernroute
+---
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: "Spreek iets in"
+    timeout: 30000
+- tapOn: "Profiel"
+- assertVisible: "Testa"
+- scrollUntilVisible:
+    element: "Uitloggen"
+- tapOn: "Uitloggen"
+- extendedWaitUntil:
+    visible: "Doe mee."
+    timeout: 15000
+- takeScreenshot: screenshots/06-uitgelogd

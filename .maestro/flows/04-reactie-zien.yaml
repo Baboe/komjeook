@@ -1,0 +1,15 @@
+# Route 4 — A ziet de reactie van B.
+# Vooraf: `node scripts/test/gebruiker-b.mjs reageer` (B reageert via de API op A's nieuwste oproep)
+appId: com.ombaa.app
+tags:
+  - kernroute
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Mijn oproepen"
+    timeout: 30000
+- tapOn: "Mijn oproepen"
+- tapOn: "Wandelen in het Wilhelminapark"
+- assertVisible: "Wie wil er mee?"
+- assertVisible: "Testb.*"
+- takeScreenshot: screenshots/04-reactie-van-b

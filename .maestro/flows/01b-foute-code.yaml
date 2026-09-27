@@ -1,0 +1,17 @@
+# Route 1b — Foute sms-code geeft een begrijpelijke melding (Belgisch nummer, gebruiker B)
+appId: com.ombaa.app
+env:
+  PHONE: ${PHONE_B}
+  OTP: "000000"
+  NAAM: "Testb"
+  LEEFTIJD: "61"
+  STAD: "Gent"
+tags:
+  - kernroute
+---
+- runFlow: ../sub/start-als-bezoeker.yaml
+- runFlow: ../sub/aanmelden.yaml
+- extendedWaitUntil:
+    visible: "De code klopt niet. Controleer de cijfers en probeer het opnieuw."
+    timeout: 15000
+- takeScreenshot: screenshots/01b-foute-code

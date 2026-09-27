@@ -1,0 +1,36 @@
+# Subflow: volledige onboarding met test-telefoonnummer.
+# Verwacht: PHONE, OTP, NAAM, LEEFTIJD, STAD
+appId: com.ombaa.app
+---
+- tapOn: "Aanmelden"
+- tapOn: "Ja, ik kom!"
+- assertVisible: "Hoi, wie ben jij?"
+- tapOn: "Sandra"
+- inputText: ${NAAM}
+- tapOn: "52"
+- inputText: ${LEEFTIJD}
+- hideKeyboard
+- tapOn: "Verder"
+- assertVisible: "Waar ben je?"
+- tapOn: "Amsterdam"
+- inputText: ${STAD}
+- hideKeyboard
+- tapOn: "Verder"
+- assertVisible: "Wat vind jij leuk?"
+- tapOn: "Wandelen"
+- tapOn: "Markt"
+- scrollUntilVisible:
+    element: "Verder"
+- tapOn: "Verder"
+- assertVisible: "Bijna klaar."
+- tapOn: "+31 6 12345678"
+- inputText: ${PHONE}
+- hideKeyboard
+- tapOn: "Stuur code"
+- extendedWaitUntil:
+    visible: "Vul de code in"
+    timeout: 15000
+- tapOn: "123456"
+- inputText: ${OTP}
+- hideKeyboard
+- tapOn: "Verder"

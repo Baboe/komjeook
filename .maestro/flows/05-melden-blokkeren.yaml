@@ -1,0 +1,14 @@
+# Route 5 — Melden en blokkeren.
+# Verwacht een "Melden"/"Blokkeren"-optie bij een oproep van iemand anders.
+# Faalt bewust zolang deze functie niet bestaat (blokkerend voor uitnodigen testers).
+appId: com.ombaa.app
+tags:
+  - kernroute
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Kom je ook?"
+    timeout: 30000
+- tapOn: "Wandelen in het Wilhelminapark"
+- takeScreenshot: screenshots/05-oproep-van-ander
+- assertVisible: "(?i).*(melden|blokkeren|meld).*"

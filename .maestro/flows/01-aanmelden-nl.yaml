@@ -1,0 +1,21 @@
+# Route 1 — Aanmelden met sms-code (gebruiker A, Nederlands nummer)
+appId: com.ombaa.app
+env:
+  PHONE: ${PHONE_A}
+  OTP: ${OTP_A}
+  NAAM: "Testa"
+  LEEFTIJD: "58"
+  STAD: "Utrecht"
+tags:
+  - kernroute
+---
+- runFlow: ../sub/start-als-bezoeker.yaml
+- runFlow: ../sub/aanmelden.yaml
+# Na verificatie: eerste-blik scherm of direct de tabs
+- extendedWaitUntil:
+    visible: "Kom je ook?"
+    timeout: 30000
+- tapOn: "Profiel"
+- assertVisible: "Testa"
+- assertVisible: "Utrecht"
+- takeScreenshot: screenshots/01-ingelogd-profiel

@@ -1,0 +1,13 @@
+# Ombaa — Maestro testflows (eerste ronde)
+# Draaien: zie docs/testen.md. Omgevingsvariabelen via -e of .maestro/.env.test
+flows:
+  - "flows/*.yaml"
+executionOrder:
+  continueOnFailure: true
+  flowsOrder:
+    - 01-aanmelden-nl
+    - 01b-foute-code
+    - 02-stem-en-oproep
+    - 04-reactie-zien
+    - 05-melden-blokkeren
+    - 06-herstart-en-uitloggen

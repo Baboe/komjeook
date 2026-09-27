@@ -1,0 +1,10 @@
+# Subflow: schone start, uitgelogd, op het tabblad "Kom je ook?"
+appId: com.ombaa.app
+---
+- clearState
+- launchApp:
+    permissions:
+      all: allow
+- extendedWaitUntil:
+    visible: "Kom je ook?"
+    timeout: 30000
